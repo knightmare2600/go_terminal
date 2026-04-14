@@ -24,27 +24,30 @@ jobs:
         with:
           go-version: '1.22.x'
 
-      # 🔧 Init module if missing
+      # 🔍 Move into actual source dir
+      - name: Detect source directory
+        id: src
+        run: |
+          if [ -d "./src/go_terminal" ]; then
+            echo "dir=src/go_terminal" >> $GITHUB_OUTPUT
+          else
+            echo "dir=." >> $GITHUB_OUTPUT
+          fi
+
+      # 🔧 Init module INSIDE the correct dir
       - name: Prepare Go module
+        working-directory: ${{ steps.src.outputs.dir }}
         run: |
           if [ ! -f go.mod ]; then
-            echo "Initializing Go module..."
             go mod init go_terminal
           fi
           go mod tidy
 
-      # 🔍 Find main.go automatically
-      - name: Locate main package
-        id: find_main
-        run: |
-          MAIN_PATH=$(grep -rl "package main" . | grep "\.go$" | head -n 1 | xargs dirname)
-          echo "Found main package in: $MAIN_PATH"
-          echo "main_path=$MAIN_PATH" >> $GITHUB_OUTPUT
-
       # 🔨 Build
       - name: Build
+        working-directory: ${{ steps.src.outputs.dir }}
         run: |
-          mkdir -p dist
+          mkdir -p ../../dist
 
           EXT=""
           if [ "${{ matrix.goos }}" = "windows" ]; then
@@ -57,8 +60,7 @@ jobs:
           GOOS=${{ matrix.goos }} \
           GOARCH=${{ matrix.goarch }} \
           go build -v \
-            -o dist/go_terminal-${{ matrix.goos }}-${{ matrix.goarch }}${EXT} \
-            "${{ steps.find_main.outputs.main_path }}"
+            -o ../../dist/go_terminal-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}
 
       # 📦 Upload
       - name: Upload artifact
