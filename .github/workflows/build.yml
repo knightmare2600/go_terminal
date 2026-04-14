@@ -1,4 +1,4 @@
-name: Build go_terminal (fyne-cross)
+name: Build go_terminal (all platforms)
 
 on:
   push:
@@ -10,102 +10,126 @@ env:
   APP_NAME: go_terminal
 
 jobs:
-  build:
+
+  # =========================
+  # 🐧 WINDOWS + LINUX
+  # =========================
+  build-linux-windows:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.22.x'
 
       - name: Install fyne-cross
         run: go install github.com/fyne-io/fyne-cross@latest
 
-      - name: Prepare Go module
+      - name: Prepare module
         run: |
           if [ ! -f go.mod ]; then
             go mod init go_terminal
           fi
           go mod tidy
 
-      - name: Detect source dir
-        id: src
-        run: |
-          if [ -d "./src/go_terminal" ]; then
-            echo "dir=src/go_terminal" >> $GITHUB_OUTPUT
-          else
-            echo "dir=." >> $GITHUB_OUTPUT
-          fi
-
-      # 🐧 Linux
       - name: Build Linux
-        working-directory: ${{ steps.src.outputs.dir }}
-        run: |
-          fyne-cross linux -arch=amd64,arm64 --app-id $APP_ID
+        run: fyne-cross linux -arch=amd64,arm64 --app-id $APP_ID
 
-      # 🪟 Windows
       - name: Build Windows
-        working-directory: ${{ steps.src.outputs.dir }}
-        run: |
-          fyne-cross windows -arch=amd64,arm64 --app-id $APP_ID
+        run: fyne-cross windows -arch=amd64,arm64 --app-id $APP_ID
 
-      # 🍎 macOS
-      - name: Build macOS
-        working-directory: ${{ steps.src.outputs.dir }}
-        run: |
-          fyne-cross darwin -arch=amd64,arm64 --app-id $APP_ID
-
-      # 📦 Collect + rename EVERYTHING properly
-      - name: Collect and rename artifacts
+      - name: Package Linux/Windows outputs
         run: |
           mkdir -p dist
 
-          echo "Collecting build outputs..."
+          find fyne-cross/dist -type f | while read f; do
+            base=$(basename "$f")
 
-          # Copy everything relevant (binaries + zips)
-          find . -type f \( -name "*.exe" -o -name "*.app" -o -name "*.tar.gz" -o -name "*.zip" -o -name "${APP_NAME}" \
-          \) | while read file; do
-
-            filename=$(basename "$file")
-
-            # Detect platform + arch from path
-            if [[ "$file" == *windows-amd64* ]]; then
-              suffix="windows-amd64"
-            elif [[ "$file" == *windows-arm64* ]]; then
-              suffix="windows-arm64"
-            elif [[ "$file" == *linux-amd64* ]]; then
-              suffix="linux-amd64"
-            elif [[ "$file" == *linux-arm64* ]]; then
-              suffix="linux-arm64"
-            elif [[ "$file" == *darwin-amd64* ]]; then
-              suffix="darwin-amd64"
-            elif [[ "$file" == *darwin-arm64* ]]; then
-              suffix="darwin-arm64"
-            else
-              suffix="unknown"
-            fi
-
-            ext=""
-            case "$filename" in
-              *.exe) ext=".exe" ;;
-              *.zip) ext=".zip" ;;
-              *.tar.gz) ext=".tar.gz" ;;
-              *.app) ext=".app" ;;
+            case "$f" in
+              *linux-amd64*)   name="${APP_NAME}-linux-amd64" ;;
+              *linux-arm64*)   name="${APP_NAME}-linux-arm64" ;;
+              *windows-amd64*) name="${APP_NAME}-windows-amd64.exe" ;;
+              *windows-arm64*) name="${APP_NAME}-windows-arm64.exe" ;;
+              *) continue ;;
             esac
 
-            newname="${APP_NAME}-${suffix}${ext}"
-
-            echo "→ $file -> dist/$newname"
-            cp "$file" "dist/$newname" || true
+            echo "Copy $f -> dist/$name"
+            cp "$f" "dist/$name"
           done
 
-      # 📤 Upload EVERYTHING
-      - name: Upload artifacts
+      - name: Create ZIP (linux/windows)
+        run: |
+          cd dist
+          zip -r ../linux-windows-binaries.zip .
+
+      - name: Upload artifact (linux/windows)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-windows
+          path: linux-windows-binaries.zip
+
+
+  # =========================
+  # 🍎 MACOS (native build)
+  # =========================
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+
+      - name: Prepare module
+        run: |
+          if [ ! -f go.mod ]; then
+            go mod init go_terminal
+          fi
+          go mod tidy
+
+      - name: Build macOS binaries
+        run: |
+          mkdir -p dist
+
+          GOOS=darwin GOARCH=amd64 go build -o dist/${APP_NAME}-darwin-amd64
+          GOOS=darwin GOARCH=arm64 go build -o dist/${APP_NAME}-darwin-arm64
+
+      - name: Create ZIP (macOS)
+        run: |
+          cd dist
+          zip -r ../macos-binaries.zip .
+
+      - name: Upload artifact (macOS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: macos-binaries.zip
+
+
+  # =========================
+  # 📦 FINAL COMBINED ARTIFACT
+  # =========================
+  bundle-all:
+    needs: [build-linux-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all
+
+      - name: Merge everything
+        run: |
+          mkdir -p final
+          find all -type f -name "*.zip" -exec cp {} final/ \;
+
+      - name: Upload unified bundle
         uses: actions/upload-artifact@v4
         with:
           name: go_terminal-all-platforms
-          path: dist/
+          path: final/
