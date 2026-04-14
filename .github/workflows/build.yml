@@ -74,42 +74,7 @@ jobs:
   # =========================
   # 🍎 MACOS (native build)
   # =========================
-  build-macos:
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.22.x'
-
-      - name: Prepare module
-        run: |
-          if [ ! -f go.mod ]; then
-            go mod init go_terminal
-          fi
-          go mod tidy
-
-      - name: Build macOS binaries
-        run: |
-          mkdir -p dist
-
-          GOOS=darwin GOARCH=amd64 go build -o dist/${APP_NAME}-darwin-amd64
-          GOOS=darwin GOARCH=arm64 go build -o dist/${APP_NAME}-darwin-arm64
-
-      - name: Create ZIP (macOS)
-        run: |
-          cd dist
-          zip -r ../macos-binaries.zip .
-
-      - name: Upload artifact (macOS)
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos
-          path: macos-binaries.zip
-
-
+  
   # =========================
   # 📦 FINAL COMBINED ARTIFACT
   # =========================
