@@ -1,4 +1,4 @@
-name: Build go_terminal (all platforms)
+name: Build go_terminal
 
 on:
   push:
@@ -11,16 +11,15 @@ env:
 
 jobs:
 
-  # =========================
-  # 🐧 WINDOWS + LINUX
-  # =========================
   build-linux-windows:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.22.x'
 
@@ -28,73 +27,62 @@ jobs:
         run: go install github.com/fyne-io/fyne-cross@latest
 
       - name: Prepare module
+        working-directory: src/go_terminal
         run: |
           if [ ! -f go.mod ]; then
             go mod init go_terminal
           fi
           go mod tidy
 
+      # =========================
+      # 🐧 Linux builds
+      # =========================
       - name: Build Linux
-        run: fyne-cross linux -arch=amd64,arm64 --app-id $APP_ID
+        working-directory: src/go_terminal
+        run: |
+          fyne-cross linux -arch=amd64,arm64 --app-id $APP_ID
 
+      # =========================
+      # 🪟 Windows builds
+      # =========================
       - name: Build Windows
-        run: fyne-cross windows -arch=amd64,arm64 --app-id $APP_ID
+        working-directory: src/go_terminal
+        run: |
+          fyne-cross windows -arch=amd64,arm64 --app-id $APP_ID
 
-      - name: Package Linux/Windows outputs
+      # =========================
+      # 📦 Collect + rename outputs
+      # =========================
+      - name: Collect artifacts
         run: |
           mkdir -p dist
 
-          find fyne-cross/dist -type f | while read f; do
-            base=$(basename "$f")
-
+          find src/go_terminal/fyne-cross/dist -type f | while read f; do
             case "$f" in
-              *linux-amd64*)   name="${APP_NAME}-linux-amd64" ;;
-              *linux-arm64*)   name="${APP_NAME}-linux-arm64" ;;
-              *windows-amd64*) name="${APP_NAME}-windows-amd64.exe" ;;
-              *windows-arm64*) name="${APP_NAME}-windows-arm64.exe" ;;
+              *linux-amd64*)   out="${APP_NAME}-linux-amd64" ;;
+              *linux-arm64*)   out="${APP_NAME}-linux-arm64" ;;
+              *windows-amd64*) out="${APP_NAME}-windows-amd64.exe" ;;
+              *windows-arm64*) out="${APP_NAME}-windows-arm64.exe" ;;
               *) continue ;;
             esac
 
-            echo "Copy $f -> dist/$name"
-            cp "$f" "dist/$name"
+            echo "Copy: $f -> dist/$out"
+            cp "$f" "dist/$out" || true
           done
 
-      - name: Create ZIP (linux/windows)
+      # =========================
+      # 📦 ZIP everything
+      # =========================
+      - name: Create ZIP bundle
         run: |
           cd dist
-          zip -r ../linux-windows-binaries.zip .
+          zip -r ../go_terminal-binaries.zip .
 
-      - name: Upload artifact (linux/windows)
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-windows
-          path: linux-windows-binaries.zip
-
-
-  # =========================
-  # 🍎 MACOS (native build)
-  # =========================
-  
-  # =========================
-  # 📦 FINAL COMBINED ARTIFACT
-  # =========================
-  bundle-all:
-    needs: [build-linux-windows]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: all
-
-      - name: Merge everything
-        run: |
-          mkdir -p final
-          find all -type f -name "*.zip" -exec cp {} final/ \;
-
-      - name: Upload unified bundle
+      # =========================
+      # 📤 Upload single artifact
+      # =========================
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: go_terminal-all-platforms
-          path: final/
+          path: go_terminal-binaries.zip
