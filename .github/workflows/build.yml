@@ -51,7 +51,7 @@ jobs:
       - name: Build Windows
         working-directory: ${{ steps.src.outputs.dir }}
         run: |
-          fyne-cross windows -arch=amd64,arm64
+          fyne-cross windows -arch=amd64,arm64 --app-id com.example.go_terminal
 
       # 📦 Collect outputs
       - name: Collect artifacts
