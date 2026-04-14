@@ -79,7 +79,7 @@ jobs:
   # 📦 FINAL COMBINED ARTIFACT
   # =========================
   bundle-all:
-    needs: [build-linux-windows, build-macos]
+    needs: [build-linux-windows]
     runs-on: ubuntu-latest
 
     steps:
