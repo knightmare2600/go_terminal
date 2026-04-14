@@ -1,4 +1,4 @@
-name: Build go_terminal binaries
+name: Build go_terminal (fyne-cross)
 
 on:
   push:
@@ -9,22 +9,29 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    strategy:
-      fail-fast: false
-      matrix:
-        goos: [linux, windows]
-        goarch: [amd64, arm64]
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Go
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22.x'
 
-      # 🔍 Move into actual source dir
+      # 🔧 Install fyne-cross
+      - name: Install fyne-cross
+        run: |
+          go install github.com/fyne-io/fyne-cross@latest
+
+      # 🔧 Ensure module exists (repo is legacy)
+      - name: Prepare Go module
+        run: |
+          if [ ! -f go.mod ]; then
+            go mod init go_terminal
+          fi
+          go mod tidy
+
+      # 🔍 Detect source dir
       - name: Detect source directory
         id: src
         run: |
@@ -34,37 +41,27 @@ jobs:
             echo "dir=." >> $GITHUB_OUTPUT
           fi
 
-      # 🔧 Init module INSIDE the correct dir
-      - name: Prepare Go module
+      # 🐧 Build Linux (amd64 + arm64)
+      - name: Build Linux
         working-directory: ${{ steps.src.outputs.dir }}
         run: |
-          if [ ! -f go.mod ]; then
-            go mod init go_terminal
-          fi
-          go mod tidy
+          fyne-cross linux -arch=amd64,arm64
 
-      # 🔨 Build
-      - name: Build
+      # 🪟 Build Windows (amd64 + arm64)
+      - name: Build Windows
         working-directory: ${{ steps.src.outputs.dir }}
         run: |
-          mkdir -p ../../dist
+          fyne-cross windows -arch=amd64,arm64
 
-          EXT=""
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            EXT=".exe"
-          fi
+      # 📦 Collect outputs
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          find . -type f \( -name "*.exe" -o -name "go_terminal" \) -exec cp {} dist/ \;
 
-          echo "Building for ${{ matrix.goos }}-${{ matrix.goarch }}..."
-
-          CGO_ENABLED=0 \
-          GOOS=${{ matrix.goos }} \
-          GOARCH=${{ matrix.goarch }} \
-          go build -v \
-            -o ../../dist/go_terminal-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}
-
-      # 📦 Upload
-      - name: Upload artifact
+      # 📤 Upload
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: go_terminal-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/go_terminal-${{ matrix.goos }}-${{ matrix.goarch }}*
+          name: go_terminal-binaries
+          path: dist/
