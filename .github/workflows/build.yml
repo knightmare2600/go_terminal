@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  APP_ID: uk.example.go_terminal
+  APP_NAME: go_terminal
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -13,17 +17,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Set up Go
+      - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22.x'
 
-      # 🔧 Install fyne-cross
       - name: Install fyne-cross
-        run: |
-          go install github.com/fyne-io/fyne-cross@latest
+        run: go install github.com/fyne-io/fyne-cross@latest
 
-      # 🔧 Ensure module exists (repo is legacy)
       - name: Prepare Go module
         run: |
           if [ ! -f go.mod ]; then
@@ -31,8 +32,7 @@ jobs:
           fi
           go mod tidy
 
-      # 🔍 Detect source dir
-      - name: Detect source directory
+      - name: Detect source dir
         id: src
         run: |
           if [ -d "./src/go_terminal" ]; then
@@ -41,27 +41,71 @@ jobs:
             echo "dir=." >> $GITHUB_OUTPUT
           fi
 
-      # 🐧 Build Linux (amd64 + arm64)
+      # 🐧 Linux
       - name: Build Linux
         working-directory: ${{ steps.src.outputs.dir }}
         run: |
-          fyne-cross linux -arch=amd64,arm64
+          fyne-cross linux -arch=amd64,arm64 --app-id $APP_ID
 
-      # 🪟 Build Windows (amd64 + arm64)
+      # 🪟 Windows
       - name: Build Windows
         working-directory: ${{ steps.src.outputs.dir }}
         run: |
-          fyne-cross windows -arch=amd64,arm64 --app-id com.example.go_terminal
+          fyne-cross windows -arch=amd64,arm64 --app-id $APP_ID
 
-      # 📦 Collect outputs
-      - name: Collect artifacts
+      # 🍎 macOS
+      - name: Build macOS
+        working-directory: ${{ steps.src.outputs.dir }}
+        run: |
+          fyne-cross darwin -arch=amd64,arm64 --app-id $APP_ID
+
+      # 📦 Collect + rename EVERYTHING properly
+      - name: Collect and rename artifacts
         run: |
           mkdir -p dist
-          find . -type f \( -name "*.exe" -o -name "go_terminal" \) -exec cp {} dist/ \;
 
-      # 📤 Upload
+          echo "Collecting build outputs..."
+
+          # Copy everything relevant (binaries + zips)
+          find . -type f \( -name "*.exe" -o -name "*.app" -o -name "*.tar.gz" -o -name "*.zip" -o -name "${APP_NAME}" \
+          \) | while read file; do
+
+            filename=$(basename "$file")
+
+            # Detect platform + arch from path
+            if [[ "$file" == *windows-amd64* ]]; then
+              suffix="windows-amd64"
+            elif [[ "$file" == *windows-arm64* ]]; then
+              suffix="windows-arm64"
+            elif [[ "$file" == *linux-amd64* ]]; then
+              suffix="linux-amd64"
+            elif [[ "$file" == *linux-arm64* ]]; then
+              suffix="linux-arm64"
+            elif [[ "$file" == *darwin-amd64* ]]; then
+              suffix="darwin-amd64"
+            elif [[ "$file" == *darwin-arm64* ]]; then
+              suffix="darwin-arm64"
+            else
+              suffix="unknown"
+            fi
+
+            ext=""
+            case "$filename" in
+              *.exe) ext=".exe" ;;
+              *.zip) ext=".zip" ;;
+              *.tar.gz) ext=".tar.gz" ;;
+              *.app) ext=".app" ;;
+            esac
+
+            newname="${APP_NAME}-${suffix}${ext}"
+
+            echo "→ $file -> dist/$newname"
+            cp "$file" "dist/$newname" || true
+          done
+
+      # 📤 Upload EVERYTHING
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: go_terminal-binaries
+          name: go_terminal-all-platforms
           path: dist/
