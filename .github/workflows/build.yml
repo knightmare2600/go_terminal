@@ -1,4 +1,4 @@
-name: Build binaries
+name: Build go_terminal binaries
 
 on:
   push:
@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     strategy:
+      fail-fast: false
       matrix:
         goos: [linux, windows]
         goarch: [amd64, arm64]
@@ -23,19 +24,35 @@ jobs:
         with:
           go-version: '1.22.x'
 
-      - name: Build binary
+      # 🔧 Fix legacy repo (no go.mod)
+      - name: Prepare Go module
+        run: |
+          if [ ! -f go.mod ]; then
+            echo "Initializing Go module..."
+            go mod init go_terminal
+          fi
+          go mod tidy
+
+      # 🔨 Build binaries
+      - name: Build
         run: |
           mkdir -p dist
+
           EXT=""
           if [ "${{ matrix.goos }}" = "windows" ]; then
             EXT=".exe"
           fi
 
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-          go build -o dist/go_terminal-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}
+          echo "Building for ${{ matrix.goos }}-${{ matrix.goarch }}..."
 
-      - name: Upload artifacts
+          CGO_ENABLED=0 \
+          GOOS=${{ matrix.goos }} \
+          GOARCH=${{ matrix.goarch }} \
+          go build -v -o dist/go_terminal-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}
+
+      # 📦 Upload artifacts (one per platform)
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: binaries
-          path: dist/
+          name: go_terminal-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/go_terminal-${{ matrix.goos }}-${{ matrix.goarch }}*
